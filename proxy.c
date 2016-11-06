@@ -17,7 +17,7 @@
 #include <time.h>
 
 
-#define MAX_BUFFER 10*1024*1024 //10MB buffer size for HTTP 
+#define MAX_BUFFER 10*1024		 //10KB buffer size for HTTP 
 #define MAX_CACHE_NUM 10 	     //support 10 entry in cache
 
 //structure to store HTTP GET Request
@@ -43,20 +43,21 @@ int cache_num = 0;			//the number of request in cache
 
 int main(int argc, char const *argv[])
 {
-	
+
 	struct hostent *server;
-	//fd_set fds_all, fds_read;
 	int server_sockfd, client_sockfd;
-	int Isrec;
 	int client_len;
 
-	int fd_max;
+
 	int server_port;
 
-	int client_num = 0;
+	int i,size;
 
  	fd_set readfds,activefds;
+ 	int fd_max;
 	struct sockaddr_in server_addr, client_addr;
+
+	char input_buffer[MAX_BUFFER];	//buffer to store packet from client
 
 	if (argc != 3) {
 		printf("Invalid parameter.\nUsage: %s <ip address> <port number>\n", argv[0]);
@@ -67,31 +68,36 @@ int main(int argc, char const *argv[])
 	server = gethostbyname(argv[1]);
 	if (server == NULL)
 	{
-		fprintf(stderr, "ERROR,no such host\n");
+		perror("Can not binding to the ip address\n");
 		exit(0);
 	}
-	
+
+	bzero((char*)&server_addr, sizeof(struct sockaddr_in));
+
 	server_addr.sin_family = AF_INET;	
   	server_addr.sin_addr.s_addr = INADDR_ANY;
   	server_addr.sin_port = htons(server_port);
   	memset(server_addr.sin_zero, '\0', sizeof server_addr.sin_zero); 
 
-	bzero((char*)&server_addr, sizeof(struct sockaddr_in));
-	server_addr.sin_family = AF_INET;//set family
-	server_addr.sin_port = htons(server_port); //set the port
-									  //serv_addr.sin_addr.s_addr = htonl(inet_network(server)); //set the ip address.
-									  //serv_addr.sin_addr.s_addr = INADDR_ANY;
 	bcopy((char *)server->h_addr, (char *)&server_addr.sin_addr.s_addr, server->h_length);
-	
+		
+
+ 	 server_sockfd = socket(AF_INET, SOCK_STREAM, 0);
+
+ 	 if (server_sockfd < 0)
+ 	 {
+  	 	 perror("Error creating socket\n");
+  	 	    exit(0);
+  	}
+
 	if((bind(server_sockfd, (struct sockaddr *)&server_addr, sizeof(server_addr))) < 0)
   	{
        perror("Error binding\n");
  	   exit(0);
   	}
-  	else{
-  	  perror("Server binding suceed!\n");
-  	}
-
+  
+  	//debug
+  	perror("Server binding suceed!\n");
 
 	if(listen(server_sockfd, 5) < 0)
   	{
@@ -102,25 +108,24 @@ int main(int argc, char const *argv[])
 	FD_ZERO(&readfds);
 	FD_ZERO(&activefds);
 
-	FD_SET(server_sockfd, &readfds);
+	FD_SET(server_sockfd, &activefds);
 
 	fd_max = server_sockfd;
 
 	while (1) {
 		readfds = activefds;
-
-        /* select API */
+      
   		if (select (fd_max + 1, &readfds, NULL, NULL, NULL) < 0){
  			 perror("Select() error!");
  			 exit(-1); 
 		}
 
-		for (int i = 0; i < fd_max + 1; i++) {
-			char input_buffer[MAX_BUFFER];	//buffer to store packet from client
-
+		for (i = 0; i < fd_max + 1; i++) {
+			
 			if (FD_ISSET(i, &readfds)) {
 				if (server_sockfd == i) {
-					client_sockfd = accept(server_sockfd, (struct sockaddr*)&client_addr, sizeof(client_addr));
+					size = sizeof(client_addr);
+					client_sockfd = accept(server_sockfd, (struct sockaddr*)&client_addr, (socklen_t*)&size);
 					if (client_sockfd == -1) {
 						perror("Error in connection with client\n");
 						exit(0);
@@ -135,22 +140,34 @@ int main(int argc, char const *argv[])
 					}
 				}
 				else{// request from client
+
 					int num = recv(i, input_buffer, MAX_BUFFER, 0);
 
 					if (num > 0) {
 						if (isGetRequest(input_buffer)) {
+
 							processRequest(i, input_buffer, num);
 						}
 					}
 
 				}
 			}
-		}
-	}
+		}//end of for 
+	}//end of while
 	close(server_sockfd);
 	return 0;
 }
 
+
+
+//function: to judge if the incoming http request is "GET"
+//return value: 1 if the http request is GET request; 0 if the http request is not GET request
+int isGetRequest(char* http){
+	if (strncmp(http, "GET", 3) == 0){
+		return 1;
+	}
+	return 0;
+}
 
 //function: process HTTP request
 int processRequest(int sock, char* input_buffer, int input_len){
@@ -162,7 +179,9 @@ int processRequest(int sock, char* input_buffer, int input_len){
 
 	http_request* request = parseHTTPPacket(input_buffer);
 
-
+	//debug: print out the host and resource in client's request
+	perror(request->host);
+	perror(request->resource);
 	//if the request hit entry in the cache
 	http_request* entry = cache;
 		while (entry != NULL) {
@@ -194,17 +213,20 @@ int processRequest(int sock, char* input_buffer, int input_len){
 					cachenum--;
 					return 1;
 					*/
-				}
-				else { // Not expired
+
+						//else { // Not expired
 					//debug
 					printf("The page has not expired!\n");
 					request->visit++;
+					perror("send response to client");
 					responseClient(sock, request);
 					return 1;
+			//	}
 				}
-			}
+			
 			entry = entry->next;
-		}
+	}//end of while
+		
 
 		//if the request cannot hit the cache
 	web_server = gethostbyname(request->host);
@@ -222,13 +244,13 @@ int processRequest(int sock, char* input_buffer, int input_len){
      }
 
      if (connect(web_sockfd, &server_addr, sizeof(server_addr)) == -1) {
-			close(websock_fd);
+			close(web_sockfd);
 			perror("Error in connecting web server");
 			exit(0);
 	}
 
 	//proxy client request to web server
-	if ((send(web_fd, input_buffer, input_len, 0)) == -1) {
+	if ((send(web_sockfd, input_buffer, input_len, 0)) == -1) {
 		perror("Error in proxying packet to the webserver");
 		exit(0);
 	}
@@ -236,7 +258,7 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	char recv_buffer[MAX_BUFFER];
 	int  recv_num;
 	//handle response from reply for the web server
-	if ((recv_num = recv(web_fd, recv_buffer, MAX_BUFFER, 0)) > 0) {
+	if ((recv_num = recv(web_sockfd, recv_buffer, MAX_BUFFER, 0)) > 0) {
 		request->response = (char *)malloc(recv_num);
 		memcpy(request->response, recv_buffer, recv_num);
 		request->len = recv_num;
@@ -250,7 +272,7 @@ int processRequest(int sock, char* input_buffer, int input_len){
 				entry = &request;
 			}
 			else{
-				while (entry->next != null)	
+				while (entry->next != NULL)	
 					entry = entry->next;
 
 				entry->next = request;
@@ -262,34 +284,32 @@ int processRequest(int sock, char* input_buffer, int input_len){
 		}
 
 		responseClient(sock, request);
-	}
-	
-}
-
-//function: to judge if the incoming http request is "GET"
-//return value: 1 if the http request is GET request; 0 if the http request is not GET request
-int isGetReuqest(char* http){
-	if (strncmp(http, "GET", 3) == 0){
-		return 1;
-	}
-	return 0;
+	}	
 }
 
 //Function： parse HTTP request from buffer
 //return value: http_request
 http_request* parseHTTPPacket(char* buffer){
 	http_request *request = malloc(sizeof(http_request));
+	int i;
 
 	char * line = strtok(strdup(buffer), "\r\n");
 	while(line) {
+
    		if (strncmp(line, "GET ", 4) == 0){
-   			strncpy(request->resource, line + 4, sizeof(line) - 12);
+   		//	perror(line);
+   			request->resource = malloc(strlen(line) - 12);
+ 			strncpy(request->resource, line + 4, strlen(line) - 12);
+   		//	perror(request->resource);
    		}
    		if (strncmp(line, "Host: ", 5) == 0){
-   			strncpy(request->resource, line + 6, sizeof(line) - 6);
+   		//	perror(line);
+   			request->host = malloc(strlen(line) - 6);
+   			strncpy(request->host, line + 6, strlen(line) - 6);
+   			//perror(request->host);
    		}
 
-   		line  = strtok(NULL, "\n");
+   		line  = strtok(NULL, "\r\n");
 	}
 
 	request->expires = 0;

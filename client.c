@@ -38,7 +38,7 @@ if((sockfd = socket(AF_INET, SOCK_STREAM,0)) <0)
 }
 
 if (argc != 4)
-{        printf(" usage: ./client PROXY_SERVER_IP PROXY_PORT URL\n");
+{       perror("Invalid parameter.\nUsage: ./client PROXY_SERVER_IP PROXY_PORT URL\n");
         exit(1);
 }
  else {
@@ -56,18 +56,15 @@ printf("URL is  %s \n", &URL);
 int i=0;
 int j=0;
 int k=0;
-while(URL[i] != '/' && URL[i+1] != '/')
-        {        i++;
-        }
-i=i+3;
+while(URL[i] != '/') {       
+    domain_name[j++] = URL[i++];
+}
 
-while ( URL[i] != '/')
-         {   domain_name[k++] = URL[i++];
-         }
-i++;
-while (i < strlen(URL) )
-         {    page[j++] = URL[i++];
-         }
+while(i < strlen(URL)){
+     page[k++] = URL[i++];
+}
+
+
 printf("domain name: %s\n",domain_name);
 printf("page: %s\n",page);
 
@@ -82,7 +79,7 @@ if ((connectfd = connect(sockfd, (struct sockaddr*) &saddress, sizeof(saddress))
 
 }
 
-sprintf(message_buff, "GET /%s HTTP/1.0\r\nHost: %s\r\nUser-Agent: HTMLGET 1.0\r\n\r\n",page,domain_name);
+sprintf(message_buff, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: HTMLGET 1.0\r\n\r\n",page,domain_name);
 
 printf("%s\n",message_buff);
 
