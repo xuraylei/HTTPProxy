@@ -12,95 +12,98 @@
 #include <regex.h>
 #include <assert.h>
 
-#define BUFFER_SIZE 2048000
-#define CACHE_SIZE 10
-
-typedef struct data_block {
-char message[BUFFER_SIZE];
-int size;
-} Data_block;
-
+#define MAX_BUFFER 10*1024       //10KB buffer size for HTTP 
 
 int main(int argc,char *argv[])
 {
-int sockfd,connectfd,port,readbytes=1;
-struct sockaddr_in saddress;
-struct hostent *server;
-char message_buff[1500];
-char URL[1000];
-char domain_name[500];
-char page[500];
-char recv_buff[512];
-FILE *f1;
-if((sockfd = socket(AF_INET, SOCK_STREAM,0)) <0)
-{        printf( "Cannot create Socket\n");
+    int sockfd;
+    int port;
+    struct sockaddr_in server_addr;
+    struct hostent *server;
+    char send_buffer[1500];
+    char url[1000];
+  
+    char recv_buff[512];
+
+    char host[100];
+    char uri[100];
+
+    //for parse url
+    int i=0;
+    int j=0;
+    int k=0;
+
+    int readbytes = 0;
+
+    if (argc != 4)
+    {   perror("Invalid parameter.\nUsage: ./client PROXY_SERVER_IP PROXY_PORT URL\n");
+        exit(0);
+    }
+
+
+    port = atoi(argv[2]);
+    strcpy(url,argv[3]);
+    server = gethostbyname(argv[1]);
+
+    if (server ==NULL)
+    {
+        perror("Error in locating server");
+        exit(0);
+    }
+
+    //parsing host and uri from the url
+    while(url[i] != '/') {       
+        host[j++] = url[i++];
+    }
+
+
+
+    while(i < strlen(url)){
+         uri[k++] = url[i++];
+    }
+    uri[0] = '/';
+    url[k] = '\0';
+
+    //create socket 
+    if((sockfd = socket(AF_INET, SOCK_STREAM,0)) <0)
+    {        
+        printf( "Cannot create Socket\n");
         exit(1);
-}
-
-if (argc != 4)
-{       perror("Invalid parameter.\nUsage: ./client PROXY_SERVER_IP PROXY_PORT URL\n");
-        exit(1);
-}
- else {
-        port = atoi(argv[2]);
-        strcpy(URL,argv[3]);
-        server = gethostbyname(argv[1]);
-        }
-if (server ==NULL)
- {printf("no such host\n");
- exit(1);
-}
-
-printf("URL is  %s \n", &URL);
-
-int i=0;
-int j=0;
-int k=0;
-while(URL[i] != '/') {       
-    domain_name[j++] = URL[i++];
-}
-
-while(i < strlen(URL)){
-     page[k++] = URL[i++];
-}
+    }
 
 
-printf("domain name: %s\n",domain_name);
-printf("page: %s\n",page);
+    printf("Host: %s\n", host);
+    printf("URI: %s\n", uri);
 
-bzero((char *)&saddress, sizeof(saddress));
+    bzero((char *)&server_addr, sizeof(server_addr));
 
-bcopy ((char *)server->h_addr,(char *)&saddress.sin_addr.s_addr,server->h_length);
-saddress.sin_port = htons(port);
-saddress.sin_family = AF_INET;
-if ((connectfd = connect(sockfd, (struct sockaddr*) &saddress, sizeof(saddress))) < 0) {
-        printf("ERROR CONNECTING\n");
-        exit(1);
+    bcopy ((char *)server->h_addr,(char *)&server_addr.sin_addr.s_addr,server->h_length);
+    server_addr.sin_port = htons(port);
+    server_addr.sin_family = AF_INET;
+    if (connect(sockfd, (struct sockaddr*) &server_addr, sizeof(server_addr)) < 0) {
+            printf("ERROR CONNECTING\n");
+            exit(1);
 
-}
+    }
 
-sprintf(message_buff, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: HTMLGET 1.0\r\n\r\n",page,domain_name);
+    sprintf(send_buffer, "GET %s HTTP/1.0\r\nHost: %s\r\nUser-Agent: HTMLGET 1.0\r\n\r\n",uri,host);
+    printf("%s\n",send_buffer);
 
-printf("%s\n",message_buff);
+    if (send(sockfd ,send_buffer,sizeof(send_buffer),0) == -1)
+    {
+        perror("Error in sending request.\n");
+        exit(0);
+    }
 
-if (send(sockfd ,message_buff,sizeof(message_buff),0) == -1)
-              {
-                 fprintf(stderr, "error in sending\n");
-                 exit(1);
-              }
+    //output response
+     while((readbytes = recv(sockfd, recv_buff, MAX_BUFFER, 0)) > 0)
+    {
+        printf("%s", recv_buff);
+        fflush(stdout);
+    }
+   
 
-
-f1=fopen("recvfile.txt","a");
-
-        while(readbytes!=0)
-        {
-                readbytes = recv(sockfd, recv_buff, 512, 0);
-                fprintf(f1,"%s",recv_buff);
-        }
-
-fclose(f1);
-
-close(sockfd);
-return(1);
+    close(sockfd);
+    return(1);
 
 }

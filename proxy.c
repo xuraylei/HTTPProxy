@@ -59,6 +59,8 @@ int main(int argc, char const *argv[])
 
 	char input_buffer[MAX_BUFFER];	//buffer to store packet from client
 
+
+
 	if (argc != 3) {
 		printf("Invalid parameter.\nUsage: %s <ip address> <port number>\n", argv[0]);
 		exit(0);
@@ -96,8 +98,6 @@ int main(int argc, char const *argv[])
  	   exit(0);
   	}
   
-  	//debug
-  	perror("Server binding suceed!\n");
 
 	if(listen(server_sockfd, 5) < 0)
   	{
@@ -147,6 +147,10 @@ int main(int argc, char const *argv[])
 						if (isGetRequest(input_buffer)) {
 
 							processRequest(i, input_buffer, num);
+
+							//clean up
+							FD_CLR(i, &activefds);
+							close(i);
 						}
 					}
 
@@ -213,11 +217,15 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	int web_sockfd;
 
 
+	time_t present;
+	time(&present);
+	struct tm *t = gmtime(&present);
+
 	http_request* request = parseHTTPPacket(input_buffer);
 
 	//debug: print out the host and resource in client's request
-	perror(request->host);
-	perror(request->resource);
+	//perror(request->host);
+	//perror(request->resource);
 	//if the request hit entry in the cache
 	http_request* entry = cache;
 		while (entry != NULL) {
@@ -227,39 +235,29 @@ int processRequest(int sock, char* input_buffer, int input_len){
 				/*
 				time_t cur_time;
 				time(&cur_time);
-				char * buff = malloc(100 * sizeof(char));
 				struct tm *tim = gmtime(&present);
-				//      printf("Present time is %lld\n",mktime(tim));
-				strftime(buff, 80, "%a, %d %b %Y %H:%M:%S %Z", tim);
-				printf("Present time is: %s\n", buff);
-
+	
 				printf("Cache has this item!\n");
 
-				if (mktime(tim) > presentpage->req.expires) {
+				if (mktime(tim) > request->expires) {
 					char * buffer = malloc(100 * sizeof(char));
-					time(&presentpage->req.expires);
-					struct tm *tim = gmtime(&presentpage->req.expires);
-					strftime(buffer, 80, "%a, %d %b %Y %H:%M:%S %Z", tim);
-					//printf("Lastmodified time is: %s\n", buffer);
-					printf("Page has expired!\n");
-					t1 = presentpage->prevpage;
-					t2 = presentpage->nextpage;
-					if (t1 != NULL)t1->nextpage = t2; else headpage = t2;
-					if (t2 != NULL)t2->prevpage = t1;
-					cachenum--;
-					return 1;
-					*/
+					time(&request->expires);
+					struct tm *tim = gmtime(&request->expires);
 
-						//else { // Not expired
+					
+					perror("Page is expired!\n");
+
+			*/
+
+		
 					//debug
-					printf("The page has not expired!\n");
-					request->visit++;
-					perror("send response to client");
-					responseClient(sock, request);
+					perror("Debug: Hit the cache!");
+
+					entry->visit++;
+					responseClient(sock, entry);
 					return 1;
-			//	}
+
 				}
-			
 			entry = entry->next;
 	}//end of while
 		
@@ -286,7 +284,9 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	}
 
 	//proxy client request to web server
-	perror("proxy request to the web server");
+
+	//debug
+	perror("Debug: proxy request to the web server");
 	if ((send(web_sockfd, input_buffer, input_len, 0)) == -1) {
 		perror("Error in proxying packet to the webserver");
 		exit(0);
@@ -295,12 +295,31 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	char recv_buffer[MAX_BUFFER];
 	int  recv_num;
 	//handle response from reply for the web server
-	perror("wait from response from webserver the web server");
 
 	if ((recv_num = recv(web_sockfd, recv_buffer, MAX_BUFFER, 0)) > 0) {
 		request->response = (char *)malloc(recv_num);
 		memcpy(request->response, recv_buffer, recv_num);
 		request->len = recv_num;
+
+		//parse expires
+		/*
+		char* expires = NULL;
+		char* token = strtok(strdup(request->response), "\r\n");
+			while (token != NULL) {
+				if (strncmp(token, "Expires: ", 9) == 0) {
+					expires = malloc(strlen(token) - 9);
+					strncpy(expires, token+9, strlen(token)-9);
+					break;
+				}
+				token = strtok(NULL, "\r\n");
+		}
+		if (expires != NULL && strcmp(expires,"-1") != 0){
+			strptime(expires, "%a, %d %b %Y %H:%M:%S %Z", &t);
+			request->expires = mktime(&t);
+		}
+		*/
+		//debug
+		//perror("expires at: " + request->expires);
 
 		//store request into cache
 		if (cache_num < MAX_CACHE_NUM){
@@ -308,22 +327,24 @@ int processRequest(int sock, char* input_buffer, int input_len){
 
 			entry = cache;
 			if (entry == NULL){
-				entry = &request;
+				cache = request;
 			}
 			else{
 				while (entry->next != NULL)	
 					entry = entry->next;
-
-				entry->next = request;
+					entry->next = request;
 			}
 		}
 		else{
 			//LRU: remove the least visited entry
 			replaceLRURequest(request);
 		}
+		//debug
 		perror(request->response);
 
 		responseClient(sock, request);
+
+
 	}	
 }
 
@@ -337,13 +358,12 @@ http_request* parseHTTPPacket(char* buffer){
 	while(line) {
 
    		if (strncmp(line, "GET ", 4) == 0){
-   		//	perror(line);
+
    			request->resource = malloc(strlen(line) - 12);
  			strncpy(request->resource, line + 4, strlen(line) - 12);
    		//	perror(request->resource);
    		}
    		if (strncmp(line, "Host: ", 5) == 0){
-   		//	perror(line);
    			request->host = malloc(strlen(line) - 6);
    			strncpy(request->host, line + 6, strlen(line) - 6);
    			//perror(request->host);
@@ -362,13 +382,8 @@ http_request* parseHTTPPacket(char* buffer){
 //function: response to client
 //return value: 1 if reponsse success
 int responseClient(int sock, http_request* req){
-	//char send_buffer[MAX_BUFFER];
-	//memcpy(send_buffer, req.response, req.len);
-
 	if ((send(sock, req->response, req->len, 0)) == -1) {
 		perror("Error in reponse!");
 	}
-	return 1;
-	//FD_CLR(client_fd, &fds_all);
-	//close(client_fd);
+	return 1;;
 }
