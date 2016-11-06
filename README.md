@@ -1,13 +1,13 @@
 A Simple HTTP Proxy Program
 
-How to build
+*How to build
 >make
 
-How to use
+*How to use
 >./server <binding IP address> <binding port>
 >./cliet <server IP address> <server port> <request URL>
 
-Use Case
+*Use Case
 Step1: run proxy server
 >./server 127.0.0.1 10000
 
