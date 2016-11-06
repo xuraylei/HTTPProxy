@@ -169,6 +169,42 @@ int isGetRequest(char* http){
 	return 0;
 }
 
+void clearVisitFlag(){
+	http_request* entry = cache;
+
+	while(entry!= NULL){
+		entry->visit = 0;
+	}
+}	
+
+//function: replace LRU entry in the cache
+void replaceLRURequest(http_request* request){
+	http_request* least_visit;
+	http_request* prev_least;
+
+	http_request* prev;
+	http_request* entry = cache;
+
+	least_visit = cache;
+
+	while(entry!= NULL){
+
+		if(entry->visit < least_visit->visit){
+			prev_least = prev;
+			least_visit = entry;
+		}
+		prev = entry;
+		entry = entry->next;
+	}
+	
+	clearVisitFlag();
+
+	//replace
+	prev_least->next = request;
+	request->next = least_visit->next;
+
+}
+
 //function: process HTTP request
 int processRequest(int sock, char* input_buffer, int input_len){
 	struct hostent *web_server;
@@ -228,7 +264,7 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	}//end of while
 		
 
-		//if the request cannot hit the cache
+	//if the request cannot hit the cache
 	web_server = gethostbyname(request->host);
 
 	server_addr.sin_family = AF_INET;	
@@ -250,6 +286,7 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	}
 
 	//proxy client request to web server
+	perror("proxy request to the web server");
 	if ((send(web_sockfd, input_buffer, input_len, 0)) == -1) {
 		perror("Error in proxying packet to the webserver");
 		exit(0);
@@ -258,6 +295,8 @@ int processRequest(int sock, char* input_buffer, int input_len){
 	char recv_buffer[MAX_BUFFER];
 	int  recv_num;
 	//handle response from reply for the web server
+	perror("wait from response from webserver the web server");
+
 	if ((recv_num = recv(web_sockfd, recv_buffer, MAX_BUFFER, 0)) > 0) {
 		request->response = (char *)malloc(recv_num);
 		memcpy(request->response, recv_buffer, recv_num);
@@ -282,6 +321,7 @@ int processRequest(int sock, char* input_buffer, int input_len){
 			//LRU: remove the least visited entry
 			replaceLRURequest(request);
 		}
+		perror(request->response);
 
 		responseClient(sock, request);
 	}	
@@ -317,44 +357,6 @@ http_request* parseHTTPPacket(char* buffer){
 
 	return request;
 }
-
-void clearVisitFlag(){
-	http_request* entry = cache;
-
-	while(entry!= NULL){
-		entry->visit = 0;
-	}
-}
-
-//function: replace LRU entry in the cache
-void replaceLRURequest(http_request* request){
-	http_request* least_visit;
-	http_request* prev_least;
-
-	http_request* prev;
-	http_request* entry = cache;
-
-	least_visit = cache;
-
-	while(entry!= NULL){
-
-		if(entry->visit < least_visit->visit){
-			prev_least = prev;
-			least_visit = entry;
-		}
-		prev = entry;
-		entry = entry->next;
-	}
-	
-	clearVisitFlag();
-
-	//replace
-	prev_least->next = request;
-	request->next = least_visit->next;
-
-}
-
-
 
 
 //function: response to client
